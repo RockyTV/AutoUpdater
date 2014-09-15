@@ -9,13 +9,18 @@ namespace AutoUpdater
 {
     public class Common
     {
-        public static string VERSION =  "1.0.0.0";
+        private static int MAJOR_VERSION = 1;
+        private static int MINOR_VERSION = 0;
+        private static int BUILD_VERSION = 0;
+        private static int REVISION = 1;
+
+        public static string VERSION =  String.Format("{0}.{1}.{2}.{3}", MAJOR_VERSION, MINOR_VERSION, BUILD_VERSION, REVISION); // MAJOR, 
         public static string AUTHOR = "RockyTV";
 
         public static string DATA_URL = "http://godarklight.info.tm/dmp/data/";
         public static string UPDATER_URL = "http://godarklight.info.tm:82/dmp/downloads/dmpupdater/DMPUpdater.exe";
 
-        private static long checkInterval = 1 * 600000000L;
+        private static long checkInterval = 30 * 600000000L; // Check every 30 minutes for a new version.
         private static string buildDate;
         private static string buildVersion;
         private static string currentVersion;
