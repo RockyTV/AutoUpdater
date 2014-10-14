@@ -1,6 +1,9 @@
 ﻿using System;
 using System.IO;
 using System.Net;
+using System.Collections.Generic;
+using System.Text;
+using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Management;
 using System.Threading;
@@ -9,15 +12,8 @@ namespace AutoUpdater
 {
     class AutoUpdater
     {
-        private static int MAJOR_VERSION = 1;
-        private static int MINOR_VERSION = 0;
-        private static int BUILD_VERSION = 1;
-        private static int REVISION = 5;
-
-        public static string VERSION =  String.Format("{0}.{1}.{2}.{3}", MAJOR_VERSION, MINOR_VERSION, BUILD_VERSION, REVISION); // MAJOR, 
-        public static string AUTHOR = "RockyTV";
-
         public static string DATA_URL = "http://godarklight.info.tm/dmp/data/";
+        public static string HASH_URL = "http://godarklight.info.tm/dmp/updater/versions/development/";
         public static string UPDATER_URL = "http://godarklight.info.tm:82/dmp/downloads/dmpupdater/DMPUpdater.exe";
 
         private static long checkInterval = 30 * 600000000L; // Check every 30 minutes for a new version.
@@ -27,6 +23,11 @@ namespace AutoUpdater
         private static string appDir = AppDomain.CurrentDomain.BaseDirectory;
         private static string throwError;
 
+        private static string[] fileIndex;
+        private static Dictionary<string, string> filesList = new Dictionary<string, string>();
+
+        //private static string backupsDir = Path.Combine(appDir, currentVersion);
+
         private static bool keepRunning = true;
 
         private static string dmpUpdater = "DMPUpdater-development.exe";
@@ -35,22 +36,16 @@ namespace AutoUpdater
 
         static void Main(string[] args)
         {
-            Console.Title = "AutoUpdater version " + VERSION + ", by " + AUTHOR;
+            Console.Title = "AutoUpdater version " + Utils.VERSION + ", by " + Utils.AUTHOR;
 
-            if (!File.Exists(Path.Combine(appDir, dmpUpdater)))
-            {
-                Log.Normal("Downloading DMPUpdater...");
-                if (!DownloadUpdater())
-                {
-                    Log.Error(" DMPUpdater -> Failed!");
-                    Log.Error("Error while downloading DMPUpdater: " + throwError);
-                    keepRunning = false;
-                }
-                else
-                {
-                    Log.Debug(" DMPUpdater -> Success!");
-                }
-            }
+            Console.WriteLine("AutoUpdater is an external program that auto updates your server every time a new development update is released.");
+            Console.WriteLine();
+            Console.WriteLine("Coded by Alexandre Oliveira, aka RockyTV.");
+            Console.WriteLine();
+            Console.WriteLine("Many thanks to Christopher Andrews, aka godarklight, for DMPUpdater being open-source.");
+
+            Thread.Sleep(5000);
+            Console.Clear();
 
             if (!File.Exists(Path.Combine(appDir, "DMPServer.exe")))
             {
@@ -60,30 +55,40 @@ namespace AutoUpdater
 
             while (keepRunning)
             {
-
                 if (DateTime.UtcNow.Ticks > (lastCheckTime + checkInterval))
                 {
                     lastCheckTime = DateTime.UtcNow.Ticks;
-                    Log.Normal("Checking for a new version...");
-                    if (!GetLatestVersion())
+                    Log.Normal("Grabbing latest commit...");
                     {
-                        Log.Error("Error while checking for a new version: " + throwError);
-                        keepRunning = false;
-                    }
-                    else
-                    {
-                        if (currentVersion != buildVersion && currentVersion != "")
+                        if (!GetLatestVersion())
                         {
-                            Log.Normal("New version released! Version " + buildVersion.Substring(0, 7) + ", built on " + buildDate);
-                            Log.Debug("Shutting down server and launching DMPUpdater...");
-                            Thread.Sleep(1000);
-                            UpdateServer();
+                            Log.Error("Failed to grab latest commit: " + throwError);
+                            keepRunning = false;
                         }
                         else
                         {
-                            Log.Normal("No new version found.");
+                            if (currentVersion != buildVersion)
+                            {
+                                Log.Normal("New commit: " + buildVersion.Substring(0, 7) + ", " + buildDate);
+                            }
                         }
                     }
+
+                    Log.Normal("Downloading file index...");
+                    if (!GetFileIndex())
+                    {
+                        Log.Error("Failed to download file index: " + throwError);
+                        keepRunning = false;
+                    }
+
+                    Log.Normal("Parsing file index...");
+                    if (!ParseFileIndex())
+                    {
+                        Log.Error("Error while parsing file index: " + throwError);
+                        keepRunning = false;
+                    }
+
+                    Thread.Sleep(500);
                 }
             }
 
@@ -95,74 +100,33 @@ namespace AutoUpdater
             }
         }
 
-        // Update server
-        public static void UpdateServer()
+        // Shutdown the server
+        public static bool ShutdownServer()
         {
-            Process.Start(dmpUpdater, "-b");
-            RestartServer();
-        }
-
-        // Restart server
-        public static void RestartServer()
-        {
-            /* Logic of these loops:
-             * 
-             * Do a check for every DMPServer running (handy for multiple servers in one machine)
-             * If there is a DMPServer running and its Path is the same as our program, kill it.
-             * Wait for DMPUpdater to finish, then run the server again.
-             * 
-             */
             foreach (Process proc in Process.GetProcessesByName("DMPServer"))
             {
-                if (ProcessExecutablePath(proc) == Path.Combine(appDir, "DMPServer.exe"))
+                if (Utils.ProcessExecutablePath(proc) == Path.Combine(appDir, "DMPServer.exe"))
                 {
-                    Log.Normal("Shutting down server...");
                     try
                     {
                         proc.Kill();
-                        Log.Debug("Server was shut down.");
                     }
                     catch (Exception e)
                     {
                         throwError = e.Message;
-                        Log.Error("Error while shutting down server: " + throwError);
-                        keepRunning = false;
-                    }
-                    foreach (Process updt in Process.GetProcessesByName("DMPUpdater-development"))
-                    {
-                        if (ProcessExecutablePath(updt) == Path.Combine(appDir, dmpUpdater))
-                        {
-                            Log.Normal("Updating server...");
-                            updt.WaitForExit();
-                            Log.Normal("Server was updated!");
-
-                            Log.Debug("Starting server...");
-                            try
-                            {
-                                Process.Start("DMPServer.exe");
-                                Log.Debug("Server was started.");
-                            }
-                            catch (Exception e)
-                            {
-                                throwError = e.Message;
-                                Log.Error("Error while starting DMPServer: " + throwError);
-                                keepRunning = false;
-                            }
-                        }
+                        return false;
                     }
                 }
             }
+            return true;
         }
 
-        // Download DMPUpdater
-        public static bool DownloadUpdater()
+        // Restart server
+        public static bool StartServer()
         {
             try
             {
-                using (WebClient wc = new WebClient())
-                {
-                    wc.DownloadFile(UPDATER_URL, dmpUpdater);
-                }
+                Process.Start("DMPServer.exe");
             }
             catch (Exception e)
             {
@@ -193,30 +157,133 @@ namespace AutoUpdater
             return true;
         }
 
-        static private string ProcessExecutablePath(Process process)
+        public static bool GetFileIndex()
         {
-            try
+            using (WebClient webClient = new WebClient())
             {
-                return process.MainModule.FileName;
-            }
-            catch
-            {
-                string query = "SELECT ExecutablePath, ProcessID FROM Win32_Process";
-                ManagementObjectSearcher searcher = new ManagementObjectSearcher(query);
-
-                foreach (ManagementObject item in searcher.Get())
+                try
                 {
-                    object id = item["ProcessID"];
-                    object path = item["ExecutablePath"];
+                    fileIndex = Encoding.UTF8.GetString(webClient.DownloadData(HASH_URL + "server.txt")).Split(new string[] { "\n" }, StringSplitOptions.None);
+                }
+                catch (Exception e)
+                {
+                    throwError = e.Message;
+                    return false;
+                }
+            }
+            return true;
+        }
 
-                    if (path != null && id.ToString() == process.Id.ToString())
+        public static bool ParseFileIndex()
+        {
+            bool needsUpdating = false;
+            foreach (string fileEntry in fileIndex)
+            {
+                if (fileEntry.Contains("="))
+                {
+                    string file = fileEntry.Remove(fileEntry.LastIndexOf("="));
+                    string shaHash = fileEntry.Remove(0, fileEntry.LastIndexOf("=") + 1);
+                    if (!IsFileUpToDate(file, shaHash) && file != "git-version.txt")
                     {
-                        return path.ToString();
+                        needsUpdating = true;
+                        if (!filesList.ContainsKey(file))
+                        {
+                            filesList.Add(file, shaHash);
+                        }
                     }
                 }
             }
 
-            return "";
+            if (needsUpdating)
+            {
+                if (!ShutdownServer())
+                {
+                    Log.Error("Error while shutting down server: " + throwError);
+                    keepRunning = false;
+                }
+                else
+                {
+                    Log.Debug("Server was shutdown.");
+                }
+
+                foreach (KeyValuePair<string, string> key in filesList)
+                {
+                    string file = key.Key;
+                    string shaHash = key.Value;
+
+                    Log.Normal("Updating file " + file + " ");
+                    if (!UpdateFile(file, shaHash))
+                    {
+                        Log.Error("Failed to update file " + file + ": " + throwError);
+                        return false;
+                    }
+                    else
+                    {
+                        Log.Normal(file + " was updated!");
+                    }
+                }
+
+                filesList.Clear();
+
+                if (!StartServer())
+                {
+                    Log.Error("Error while starting server: " + throwError);
+                    keepRunning = false;
+                }
+                else
+                {
+                    Log.Debug("Server started.");
+                }
+            }
+
+
+            return true;
+        }
+
+        private static bool IsFileUpToDate(string file, string shaHash)
+        {
+            if (!File.Exists(Path.Combine(appDir, file)))
+            {
+                return false;
+            }
+
+            using (FileStream fs = new FileStream(Path.Combine(appDir, file), FileMode.Open, FileAccess.Read))
+            {
+                using (SHA256Managed sha = new SHA256Managed())
+                {
+                    string fileSha = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+                    if (shaHash != fileSha)
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static bool UpdateFile(string file, string shaHash)
+        {
+            if (File.Exists(Path.Combine(appDir, file)))
+            {
+                File.Delete(Path.Combine(appDir, file));
+            }
+            using (FileStream fs = new FileStream(Path.Combine(appDir, file), FileMode.Create, FileAccess.Write))
+            {
+                using (WebClient webClient = new WebClient())
+                {
+                    try
+                    {
+                        byte[] fileBytes = webClient.DownloadData(HASH_URL + "objects/" + shaHash);
+                        fs.Write(fileBytes, 0, fileBytes.Length);
+                    }
+                    catch (Exception e)
+                    {
+                        throwError = e.Message;
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
     }
