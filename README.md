@@ -15,4 +15,9 @@ The checks run every 30 minutes, and, if for some reason you can't contact godar
 
 #### Installation
 
-Installation is simple. Just download the latest release, and extract the file to your server folder.
+Installation is simple. Just download the latest [release](https://github.com/RockyTV/AutoUpdater/releases), and extract the file to your server folder.
+
+
+#### Credits
+
+* **godarklight** for his stumbling work with DMPUpdater and DarkMultiPlayer
