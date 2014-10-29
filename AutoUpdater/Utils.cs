@@ -2,6 +2,7 @@
 using System.IO;
 using System.Diagnostics;
 using System.Management;
+using System.Security.Principal;
 
 namespace AutoUpdater
 {
@@ -51,6 +52,12 @@ namespace AutoUpdater
                 }
             }
             return "";
+        }
+        #endregion
+        #region IsRunningAsAdministrator
+        public static bool IsRunningAsAdministrator()
+        {
+            return (new WindowsPrincipal(WindowsIdentity.GetCurrent())).IsInRole(WindowsBuiltInRole.Administrator);
         }
         #endregion
     }

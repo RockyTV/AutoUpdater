@@ -30,8 +30,6 @@ namespace AutoUpdater
 
         private static bool keepRunning = true;
 
-        private static string dmpUpdater = "DMPUpdater-development.exe";
-
         private static long lastCheckTime = DateTime.UtcNow.Ticks;
 
         static void Main(string[] args)
@@ -53,39 +51,49 @@ namespace AutoUpdater
                 keepRunning = false;
             }
 
+            string os = Environment.OSVersion.Platform.ToString();
+            if ((os == "Win32NT" || os == "Win32S" || os == "Win32Windows" || os == "WinCE") && (!Utils.IsRunningAsAdministrator()))
+            {
+                // Restart the program in admin mode. If we don't run the program under admin mode on Windows, it will crash if your server has the http port enabled or if it is running under admin mode.
+                Log.Debug("OS is Windows and Application is not running as Administrator.");
+                Log.Debug("Prompting the user to switch to administrator mode.");
+
+                ProcessStartInfo startInfo = new ProcessStartInfo("AutoUpdater.exe") { Verb = "runas" };
+                Process.Start(startInfo);
+
+                Environment.Exit(0); // Terminate the current app.
+            }
+
             while (keepRunning)
             {
                 if (DateTime.UtcNow.Ticks > (lastCheckTime + checkInterval))
                 {
                     lastCheckTime = DateTime.UtcNow.Ticks;
                     Log.Normal("Grabbing latest commit...");
+                    if (!GetLatestVersion())
                     {
-                        if (!GetLatestVersion())
+                        Log.Error("Failed to grab latest commit: " + throwError);
+                        keepRunning = false;
+                    }
+                    else
+                    {
+                        if (currentVersion != buildVersion)
                         {
-                            Log.Error("Failed to grab latest commit: " + throwError);
-                            //keepRunning = false;
-                        }
-                        else
-                        {
-                            if (currentVersion != buildVersion)
+                            Log.Normal("New commit: " + buildVersion.Substring(0, 7) + ", " + buildDate);
+                            Log.Normal("Downloading file index...");
+                            if (!GetFileIndex())
                             {
-                                Log.Normal("New commit: " + buildVersion.Substring(0, 7) + ", " + buildDate);
+                                Log.Error("Failed to download file index: " + throwError);
+                                keepRunning = false;
+                            }
+
+                            Log.Normal("Parsing file index...");
+                            if (!ParseFileIndex())
+                            {
+                                Log.Error("Error while parsing file index: " + throwError);
+                                keepRunning = false;
                             }
                         }
-                    }
-
-                    Log.Normal("Downloading file index...");
-                    if (!GetFileIndex())
-                    {
-                        Log.Error("Failed to download file index: " + throwError);
-                        //keepRunning = false;
-                    }
-
-                    Log.Normal("Parsing file index...");
-                    if (!ParseFileIndex())
-                    {
-                        Log.Error("Error while parsing file index: " + throwError);
-                        //keepRunning = false;
                     }
 
                     Thread.Sleep(500);
@@ -199,7 +207,7 @@ namespace AutoUpdater
                 if (!ShutdownServer())
                 {
                     Log.Error("Error while shutting down server: " + throwError);
-                    //keepRunning = false;
+                    keepRunning = false;
                 }
                 else
                 {
@@ -228,7 +236,7 @@ namespace AutoUpdater
                 if (!StartServer())
                 {
                     Log.Error("Error while starting server: " + throwError);
-                    //keepRunning = false;
+                    keepRunning = false;
                 }
                 else
                 {
