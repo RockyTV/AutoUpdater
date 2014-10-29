@@ -63,7 +63,7 @@ namespace AutoUpdater
                         if (!GetLatestVersion())
                         {
                             Log.Error("Failed to grab latest commit: " + throwError);
-                            keepRunning = false;
+                            //keepRunning = false;
                         }
                         else
                         {
@@ -78,14 +78,14 @@ namespace AutoUpdater
                     if (!GetFileIndex())
                     {
                         Log.Error("Failed to download file index: " + throwError);
-                        keepRunning = false;
+                        //keepRunning = false;
                     }
 
                     Log.Normal("Parsing file index...");
                     if (!ParseFileIndex())
                     {
                         Log.Error("Error while parsing file index: " + throwError);
-                        keepRunning = false;
+                        //keepRunning = false;
                     }
 
                     Thread.Sleep(500);
@@ -199,7 +199,7 @@ namespace AutoUpdater
                 if (!ShutdownServer())
                 {
                     Log.Error("Error while shutting down server: " + throwError);
-                    keepRunning = false;
+                    //keepRunning = false;
                 }
                 else
                 {
@@ -228,7 +228,7 @@ namespace AutoUpdater
                 if (!StartServer())
                 {
                     Log.Error("Error while starting server: " + throwError);
-                    keepRunning = false;
+                    //keepRunning = false;
                 }
                 else
                 {
