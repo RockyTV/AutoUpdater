@@ -3,14 +3,21 @@ using System.IO;
 using System.Diagnostics;
 using System.Management;
 using System.Security.Principal;
+using System.Collections.Generic;
+using System.Net;
 
 namespace AutoUpdater
 {
-    static class Utils
+    public class JenkinsAPI
+    {
+        public Dictionary<string, string> lastSuccessfulBuild { get; set; }
+    }
+
+    public static class Utils
     {
         private static int MAJOR_VERSION = 1;
         private static int MINOR_VERSION = 0;
-        private static int BUILD_VERSION = 2;
+        private static int BUILD_VERSION = 3;
         private static int REVISION = 0;
 
         public static string VERSION

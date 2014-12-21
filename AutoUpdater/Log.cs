@@ -56,5 +56,12 @@ namespace AutoUpdater
             WriteLog(LogLevels.ERROR, message);
             Console.ForegroundColor = ConsoleColor.Gray;
         }
+
+        public static void FriendlyWarning(string message)
+        {
+            Console.ForegroundColor = ConsoleColor.Green;
+            WriteLog(LogLevels.INFO, message);
+            Console.ForegroundColor = ConsoleColor.Gray;
+        }
     }
 }

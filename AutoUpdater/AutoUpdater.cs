@@ -7,14 +7,19 @@ using System.Security.Cryptography;
 using System.Diagnostics;
 using System.Management;
 using System.Threading;
+using Newtonsoft.Json;
+using System.Reflection;
 
 namespace AutoUpdater
 {
     class AutoUpdater
     {
-        public static string DATA_URL = "http://godarklight.info.tm/dmp/data/";
-        public static string HASH_URL = "http://godarklight.info.tm/dmp/updater/versions/development/";
-        public static string UPDATER_URL = "http://godarklight.info.tm:82/dmp/downloads/dmpupdater/DMPUpdater.exe";
+        public static string EXE_NAME = AppDomain.CurrentDomain.FriendlyName;
+        public static string VERSION = "release";
+        public static string JOB_FOLDER;
+        public static string MD5_INDEX;
+        public static string OBJECTS_FOLDER;
+        public static string API_URL;
 
         private static long checkInterval = 30 * 600000000L; // Check every 30 minutes for a new version.
         private static string buildDate;
@@ -51,6 +56,31 @@ namespace AutoUpdater
                 keepRunning = false;
             }
 
+            // Name logic checking, thanks darklight!
+            string exeName = AppDomain.CurrentDomain.FriendlyName;
+            if (!exeName.Contains("-") || !exeName.Contains(".exe"))
+            {
+                if (exeName == "AutoUpdater.exe")
+                {
+                    VERSION = "release";
+                }
+                else
+                {
+                    Log.Error("Badly formatted version. Valid versions are: release, dev, development");
+                    keepRunning = false;
+                }
+            }
+            else
+            {
+                VERSION = exeName.Remove(0, exeName.LastIndexOf("-") + 1).Replace(".exe", "").ToLowerInvariant();
+            }
+
+            // Set our variables
+            JOB_FOLDER = "http://dmp-jenkins.cf/job/" + VERSION + "/";
+            MD5_INDEX = JOB_FOLDER + "lastSuccessfulBuild/artifact/server/server.txt";
+            OBJECTS_FOLDER = JOB_FOLDER + "lastSuccessfulBuild/artifact/server/";
+            API_URL = JOB_FOLDER + "/api/json";
+
             string os = Environment.OSVersion.Platform.ToString();
             if ((os == "Win32NT" || os == "Win32S" || os == "Win32Windows" || os == "WinCE") && (!Utils.IsRunningAsAdministrator()))
             {
@@ -58,7 +88,7 @@ namespace AutoUpdater
                 Log.Debug("OS is Windows and Application is not running as Administrator.");
                 Log.Debug("Prompting the user to switch to administrator mode.");
 
-                ProcessStartInfo startInfo = new ProcessStartInfo("AutoUpdater.exe") { Verb = "runas" };
+                ProcessStartInfo startInfo = new ProcessStartInfo(EXE_NAME) { Verb = "runas" };
                 Process.Start(startInfo);
 
                 Environment.Exit(0); // Terminate the current app.
@@ -79,7 +109,7 @@ namespace AutoUpdater
                     {
                         if (currentVersion != buildVersion)
                         {
-                            Log.Normal("New commit: " + buildVersion.Substring(0, 7) + ", " + buildDate);
+                            Log.FriendlyWarning("New Jenkins build! Build #" + buildVersion);
                             Log.Normal("Downloading file index...");
                             if (!GetFileIndex())
                             {
@@ -153,8 +183,10 @@ namespace AutoUpdater
                 {
                     currentVersion = buildVersion; // This means that the current checked version should always be buildVersion.
 
-                    buildVersion = wc.DownloadString(DATA_URL + "develtag");
-                    buildDate = wc.DownloadString(DATA_URL + "develbuilddate");
+                    string downloadedJson = wc.DownloadString(API_URL);
+                    JenkinsAPI parsedJson = JsonConvert.DeserializeObject<JenkinsAPI>(downloadedJson);
+
+                    buildVersion = parsedJson.lastSuccessfulBuild["number"];
                 }
             }
             catch (Exception e)
@@ -171,7 +203,7 @@ namespace AutoUpdater
             {
                 try
                 {
-                    fileIndex = Encoding.UTF8.GetString(webClient.DownloadData(HASH_URL + "server.txt")).Split(new string[] { "\n" }, StringSplitOptions.None);
+                    fileIndex = Encoding.UTF8.GetString(webClient.DownloadData(MD5_INDEX)).Split(new string[] { "\n" }, StringSplitOptions.None);
                 }
                 catch (Exception e)
                 {
@@ -187,11 +219,13 @@ namespace AutoUpdater
             bool needsUpdating = false;
             foreach (string fileEntry in fileIndex)
             {
-                if (fileEntry.Contains("="))
+                if (fileEntry.Contains(" "))
                 {
-                    string file = fileEntry.Remove(fileEntry.LastIndexOf("="));
-                    string shaHash = fileEntry.Remove(0, fileEntry.LastIndexOf("=") + 1);
-                    if (!IsFileUpToDate(file, shaHash) && file != "git-version.txt")
+                    string shaHash = fileEntry.Remove(fileEntry.IndexOf(" ") + 1).Trim();
+                    string file = fileEntry.Remove(0, fileEntry.IndexOf(" ")).Trim();
+                    Console.WriteLine("File: " + file);
+                    Console.WriteLine("Hash: " + shaHash);
+                    if (!IsFileUpToDate(file, shaHash))
                     {
                         needsUpdating = true;
                         if (!filesList.ContainsKey(file))
@@ -243,6 +277,10 @@ namespace AutoUpdater
                     Log.Debug("Server started.");
                 }
             }
+            else
+            {
+                Log.Normal("No files need updating.");
+            }
 
 
             return true;
@@ -257,9 +295,9 @@ namespace AutoUpdater
 
             using (FileStream fs = new FileStream(Path.Combine(appDir, file), FileMode.Open, FileAccess.Read))
             {
-                using (SHA256Managed sha = new SHA256Managed())
+                using (MD5 md5 = MD5.Create())
                 {
-                    string fileSha = BitConverter.ToString(sha.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
+                    string fileSha = BitConverter.ToString(md5.ComputeHash(fs)).Replace("-", "").ToLowerInvariant();
                     if (shaHash != fileSha)
                     {
                         return false;
@@ -281,7 +319,7 @@ namespace AutoUpdater
                 {
                     try
                     {
-                        byte[] fileBytes = webClient.DownloadData(HASH_URL + "objects/" + shaHash);
+                        byte[] fileBytes = webClient.DownloadData(OBJECTS_FOLDER + file);
                         fs.Write(fileBytes, 0, fileBytes.Length);
                     }
                     catch (Exception e)
