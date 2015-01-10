@@ -17,7 +17,7 @@ namespace AutoUpdater
     {
         private static int MAJOR_VERSION = 1;
         private static int MINOR_VERSION = 0;
-        private static int BUILD_VERSION = 3;
+        private static int BUILD_VERSION = 4;
         private static int REVISION = 0;
 
         public static string VERSION
