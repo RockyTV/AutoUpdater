@@ -9,6 +9,7 @@ using System.Management;
 using System.Threading;
 using Newtonsoft.Json;
 using System.Reflection;
+using System.ComponentModel;
 
 namespace AutoUpdater
 {
@@ -28,6 +29,11 @@ namespace AutoUpdater
         private static string appDir = AppDomain.CurrentDomain.BaseDirectory;
         private static string throwError;
 
+        private static bool batchMode;
+        private static bool skipIntro;
+
+        private static List<string> validVersions = new List<string>();
+
         private static string[] fileIndex;
         private static Dictionary<string, string> filesList = new Dictionary<string, string>();
 
@@ -37,10 +43,8 @@ namespace AutoUpdater
 
         private static long lastCheckTime = DateTime.UtcNow.Ticks;
 
-        static void Main(string[] args)
+        static void ShowIntro()
         {
-            Console.Title = "AutoUpdater version " + Utils.VERSION + ", by " + Utils.AUTHOR;
-
             Console.WriteLine("AutoUpdater is an external program that auto updates your server every time a new development update is released.");
             Console.WriteLine();
             Console.WriteLine("Coded by Alexandre Oliveira, aka RockyTV.");
@@ -49,6 +53,35 @@ namespace AutoUpdater
 
             Thread.Sleep(5000);
             Console.Clear();
+        }
+
+        static void Main(string[] args)
+        {
+            validVersions.Add("release");
+            validVersions.Add("development");
+            validVersions.Add("unstable");
+
+            if (args.Length > 0 && args.Length < 3)
+            {
+                if (args.Length == 2)
+                {
+                    batchMode = (args[0] == "-b" || args[0] == "--batch" || args[0] == "-batch" || args[1] == "-b" || args[1] == "--batch" || args[1] == "-batch") ? true : false;
+                    skipIntro = (args[0] == "-skip" || args[0] == "--skip" || args[1] == "-skip" || args[1] == "--skip") ? true : false;
+                }
+                else if (args.Length == 1)
+                {
+                    batchMode = (args[0] == "-b" || args[0] == "--batch" || args[0] == "-batch") ? true : false;
+                    skipIntro = (args[0] == "-skip" || args[0] == "--skip") ? true : false;
+                }
+            }
+
+            Console.Title = "AutoUpdater version " + Utils.VERSION + ", by " + Utils.AUTHOR;
+
+
+            if (!skipIntro)
+            {
+                ShowIntro();
+            }
 
             if (!File.Exists(Path.Combine(appDir, "DMPServer.exe")))
             {
@@ -57,22 +90,31 @@ namespace AutoUpdater
             }
 
             // Name logic checking, thanks darklight!
-            string exeName = AppDomain.CurrentDomain.FriendlyName;
-            if (!exeName.Contains("-") || !exeName.Contains(".exe"))
+            string exeName = Path.GetFileNameWithoutExtension(AppDomain.CurrentDomain.FriendlyName);
+            if (!exeName.Contains("-"))
             {
-                if (exeName == "AutoUpdater.exe")
+                if (exeName == "AutoUpdater")
                 {
                     VERSION = "release";
                 }
                 else
                 {
-                    Log.Error("Badly formatted version. Valid versions are: release, dev, development");
+                    Log.Error("Badly formatted version. Valid versions are: " + string.Join(", ", validVersions.ToArray()));
                     keepRunning = false;
                 }
             }
             else
             {
-                VERSION = exeName.Remove(0, exeName.LastIndexOf("-") + 1).Replace(".exe", "").ToLowerInvariant();
+                string ver = exeName.Remove(0, exeName.LastIndexOf("-") + 1).ToLowerInvariant();
+                if (validVersions.Contains(ver))
+                {
+                    VERSION = ver;
+                }
+                else
+                {
+                    Log.Error("Badly formatted version. Valid versions are: " + string.Join(", ", validVersions.ToArray()));
+                    keepRunning = false;
+                }
             }
 
             // Set our variables
@@ -88,14 +130,25 @@ namespace AutoUpdater
                 Log.Debug("OS is Windows and Application is not running as Administrator.");
                 Log.Debug("Prompting the user to switch to administrator mode.");
 
-                ProcessStartInfo startInfo = new ProcessStartInfo(EXE_NAME) { Verb = "runas" };
-                Process.Start(startInfo);
+                try
+                {
 
-                Environment.Exit(0); // Terminate the current app.
+                    ProcessStartInfo startInfo = new ProcessStartInfo(EXE_NAME) { Verb = "runas" };
+                    startInfo.Arguments = "-skip";
+                    Process.Start(startInfo);
+
+                    Environment.Exit(0); // Terminate the current app.
+                }
+                catch (Win32Exception e)
+                {
+                    Log.Debug("User did not switch to administrator mode. Quitting.");
+                    keepRunning = false;
+                }
             }
 
             while (keepRunning)
             {
+
                 if (DateTime.UtcNow.Ticks > (lastCheckTime + checkInterval))
                 {
                     lastCheckTime = DateTime.UtcNow.Ticks;
@@ -130,7 +183,7 @@ namespace AutoUpdater
                 }
             }
 
-            if (!keepRunning)
+            if (!keepRunning && !batchMode)
             {
                 Console.WriteLine();
                 Console.Write("Press any key to exit... ");
